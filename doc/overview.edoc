@@ -1,7 +1,29 @@
-@author Ulf Wiger <ulf.wiger@erlang-solutions.com>
+@author Ulf Wiger <ulf@wiger.net>
 @author Joseph Wayne Norton <norton@geminimobile.com>
 
 @doc Extended process dictionary
+
+[![Build Status](https://travis-ci.org/uwiger/gproc.png?branch=master)](https://travis-ci.org/uwiger/gproc)
+[![Hex pm](http://img.shields.io/hexpm/v/gproc.svg?style=flat)](https://hex.pm/packages/gproc)
+
+
+<h2>Note</h2>
+
+Gproc has two dependencies: `gen_leader' and `edown'. Since most people don't
+actively use either, they are no longer fetched by default.
+
+<ul>
+<li>To enable fetching of `gen_leader', export the OS environment variable
+ `GPROC_DIST=true' (this can be done e.g. from a GNU Makefile)</li>
+<li>`edown' is fetched on-demand whenever `rebar get-deps doc' is called (which
+  happens when you call `make doc')</li>
+</ul>
+
+<h2>Installation</h2>
+
+You can get `gproc' from the <a href="https://hex.pm/packages/gproc">Hex package manager</a>
+
+That means declaring dependency on `{gproc, "0.5.0"}' in your `rebar3'-based applications or `{:gproc, "~> 0.5.0"}' in your `mix' based applications.
 
 <h2>Introduction</h2>
 
@@ -33,7 +55,7 @@ browse key data in a running system.
 An interesting application of gproc is building publish/subscribe patterns.
 Example:
 
-<pre>
+<pre lang="erlang">
 subscribe(EventType) ->
     %% Gproc notation: {p, l, Name} means {(p)roperty, (l)ocal, Name}
     gproc:reg({p, l, {?MODULE, EventType}}).

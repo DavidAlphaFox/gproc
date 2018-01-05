@@ -1,7 +1,23 @@
-%%%----------------------------------------------------------------------
-%%% File    : gproc_sup.erl
-%%% Purpose : GPROC top-level supervisor
-%%%----------------------------------------------------------------------
+%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% --------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%% --------------------------------------------------
+%%----------------------------------------------------------------------
+%% File    : gproc_sup.erl
+%% Purpose : GPROC top-level supervisor
+%%----------------------------------------------------------------------
 
 -module(gproc_sup).
 
@@ -52,7 +68,9 @@ init(_Args) ->
 	   permanent, 2000, worker, [gproc_monitor]},
     BCast = {gproc_bcast, {gproc_bcast, start_link, []},
 	     permanent, 2000, worker, [gproc_bcast]},
-    {ok,{{one_for_one, 15, 60}, [GProc| Dist] ++ [Mon, BCast]}}.
+    Pool = {gproc_pool, {gproc_pool, start_link, []},
+	    permanent, 2000, worker, [gproc_pool]},
+    {ok,{{one_for_one, 15, 60}, [GProc| Dist] ++ [Mon, BCast, Pool]}}.
 
 
 %%%----------------------------------------------------------------------

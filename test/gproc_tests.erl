@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% --------------------------------------------------
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
 %%
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
 %% under the License.
+%% --------------------------------------------------
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%% @author Ulf Wiger <ulf.wiger@erlang-solutions.com>
+%% @author Ulf Wiger <ulf@wiger.net>
 %%
 -module(gproc_tests).
 
@@ -22,9 +24,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("stdlib/include/qlc.hrl").
 
+-define(T_NAME, {n, l, {?MODULE, ?LINE, erlang:timestamp()}}).
+
 conf_test_() ->
     {foreach,
      fun() ->
+             application:stop(gproc),
 	     application:unload(gproc)
      end,
      fun(_) ->
@@ -36,7 +41,7 @@ conf_test_() ->
 t_server_opts() ->
     H = 10000,
     application:set_env(gproc, server_options, [{min_heap_size, H}]),
-    ?assert(ok == application:start(gproc)),
+    ?assertMatch(ok, application:start(gproc)),
     {min_heap_size, H1} = process_info(whereis(gproc), min_heap_size),
     ?assert(is_integer(H1) andalso H1 > H).
 
@@ -71,6 +76,14 @@ reg_test_() ->
      [
       {spawn, ?_test(?debugVal(t_simple_reg()))}
       , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_simple_reg_other()))}
+      , ?_test(t_is_clean())
+      , ?_test(?debugVal(t_simple_ensure()))
+      , ?_test(t_is_clean())
+      , ?_test(?debugVal(t_simple_ensure_other()))
+      , ?_test(t_is_clean())
+      , ?_test(?debugVal(t_simple_ensure_prop()))
+      , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_simple_reg_or_locate()))}
       , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_reg_or_locate2()))}
@@ -80,6 +93,14 @@ reg_test_() ->
       , {spawn, ?_test(?debugVal(t_simple_counter()))}
       , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_simple_aggr_counter()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_awaited_aggr_counter()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_simple_resource_count()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_awaited_resource_count()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_resource_count_on_zero_send()))}
       , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_update_counters()))}
       , ?_test(t_is_clean())
@@ -92,6 +113,8 @@ reg_test_() ->
       , {spawn, ?_test(?debugVal(t_await_crash()))}
       , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_simple_mreg()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_mreg_props()))}
       , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_gproc_crash()))}
       , ?_test(t_is_clean())
@@ -127,9 +150,17 @@ reg_test_() ->
       , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_monitor_give_away()))}
       , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_monitor_standby()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_monitor_follow()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_monitor_demonitor()))}
+      , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_subscribe()))}
       , ?_test(t_is_clean())
       , {spawn, ?_test(?debugVal(t_gproc_info()))}
+      , ?_test(t_is_clean())
+      , {spawn, ?_test(?debugVal(t_simple_pool()))}
       , ?_test(t_is_clean())
      ]}.
 
@@ -138,6 +169,70 @@ t_simple_reg() ->
     ?assert(gproc:where({n,l,name}) =:= self()),
     ?assert(gproc:unreg({n,l,name}) =:= true),
     ?assert(gproc:where({n,l,name}) =:= undefined).
+
+t_simple_reg_other() ->
+    P = self(),
+    P1 = spawn_link(fun() ->
+                            receive
+                                {P, goodbye} -> ok
+                            end
+                    end),
+    Ref = erlang:monitor(process, P1),
+    ?assert(gproc:reg_other({n,l,name}, P1) =:= true),
+    ?assert(gproc:where({n,l,name}) =:= P1),
+    ?assert(gproc:unreg_other({n,l,name}, P1) =:= true),
+    ?assert(gproc:where({n,l,name}) =:= undefined),
+    P1 ! {self(), goodbye},
+    receive
+        {'DOWN', Ref, _, _, _} ->
+            ok
+    end.
+
+t_simple_ensure() ->
+    P = self(),
+    Key = {n,l,name},
+    ?assert(gproc:reg(Key) =:= true),
+    ?assert(gproc:where(Key) =:= P),
+    ?assert(gproc:ensure_reg(Key, new_val, [{a,1}]) =:= updated),
+    ?assert(gproc:get_attributes(Key) =:= [{a,1}]),
+    ?assert(gproc:unreg(Key) =:= true),
+    ?assert(gproc:where(Key) =:= undefined).
+
+t_simple_ensure_other() ->
+    P = self(),
+    Key = {n,l,name},
+    P1 = spawn_link(fun() ->
+                            receive
+                                {P, goodbye} -> ok
+                            end
+                    end),
+    Ref = erlang:monitor(process, P1),
+    ?assert(gproc:reg_other(Key, P1) =:= true),
+    ?assert(gproc:where(Key) =:= P1),
+    ?assert(gproc:ensure_reg_other(Key, P1, new_val, [{a,1}]) =:= updated),
+    ?assert(gproc:get_value(Key, P1) =:= new_val),
+    ?assert(gproc:get_attributes(Key, P1) =:= [{a,1}]),
+    ?assert(gproc:unreg_other(Key, P1) =:= true),
+    ?assert(gproc:where({n,l,name}) =:= undefined),
+    P1 ! {self(), goodbye},
+    receive
+        {'DOWN', Ref, _, _, _} ->
+            ok
+    end.
+
+t_simple_ensure_prop() ->
+    Key = {p,l,?LINE},
+    P = self(),
+    Select = fun() ->
+                     gproc:select({l,p}, [{ {Key,'_','_'},[],['$_'] }])
+             end,
+    ?assertMatch(new, gproc:ensure_reg(Key, first_val, [])),
+    ?assertMatch([{Key,P,first_val}], Select()),
+    ?assertMatch(updated, gproc:ensure_reg(Key, new_val, [{a,1}])),
+    ?assertMatch([{Key,P,new_val}], Select()),
+    ?assertMatch([{a,1}], gproc:get_attributes(Key)),
+    ?assertMatch(true, gproc:unreg(Key)),
+    ?assertMatch([], Select()).
 
 t_simple_reg_or_locate() ->
     P = self(),
@@ -171,21 +266,21 @@ t_reg_or_locate3() ->
 		     fun() ->
 			     P ! {self(), ok},
 			     receive
-				 {'DOWN',Ref,_,_,_} -> ok
+				 {'DOWN',_Ref,_,_,_} -> ok
 			     end
 		     end),
     ?assert(P =/= P1),
     ?assert(Value =:= the_value),
-    Ref = erlang:monitor(process, P1),
+    _Ref = erlang:monitor(process, P1),
     receive
 	{P1, ok} -> ok;
-	{'DOWN', Ref, _, _, Reason} ->
+	{'DOWN', _Ref, _, _, _Reason} ->
 	    ?assert(process_died_unexpectedly)
     end,
     ?assertMatch({P1, the_value}, gproc:reg_or_locate({n,l,foo})),
     exit(P1, kill),
     receive
-	{'DOWN',R1,_,_,_} ->
+	{'DOWN',_R1,_,_,_} ->
 	    ok
     end.
 
@@ -217,6 +312,65 @@ t_simple_aggr_counter() ->
 	    gproc:audit_process(P1)
     end,
     ?assert(gproc:get_value({a,l,c1}) =:= 7).
+
+t_awaited_aggr_counter() ->
+    ?assert(gproc:reg({c,l,c1}, 3) =:= true),
+    gproc:nb_wait({a,l,c1}),
+    ?assert(gproc:reg({a,l,c1}) =:= true),
+    receive {gproc,_,registered,{{a,l,c1},_,_}} -> ok
+    after 1000 ->
+            error(timeout)
+    end,
+    ?assertMatch(3, gproc:get_value({a,l,c1})).
+
+t_simple_resource_count() ->
+    ?assert(gproc:reg({r,l,r1}, 1) =:= true),
+    ?assert(gproc:reg({rc,l,r1}) =:= true),
+    ?assert(gproc:get_value({rc,l,r1}) =:= 1),
+    P = self(),
+    P1 = spawn_link(fun() ->
+                            gproc:reg({r,l,r1}, 1),
+                            P ! {self(), ok},
+                            receive
+                                {P, goodbye} -> ok
+                            end
+                    end),
+    receive {P1, ok} -> ok end,
+    ?assert(gproc:get_value({rc,l,r1}) =:= 2),
+    P1 ! {self(), goodbye},
+    R = erlang:monitor(process, P1),
+    receive {'DOWN', R, _, _, _} ->
+            gproc:audit_process(P1)
+    end,
+    ?assert(gproc:get_value({rc,l,r1}) =:= 1).
+
+t_awaited_resource_count() ->
+    ?assert(gproc:reg({r,l,r1}, 3) =:= true),
+    ?assert(gproc:reg({r,l,r2}, 3) =:= true),
+    ?assert(gproc:reg({r,l,r3}, 3) =:= true),
+    gproc:nb_wait({rc,l,r1}),
+    ?assert(gproc:reg({rc,l,r1}) =:= true),
+    receive {gproc,_,registered,{{rc,l,r1},_,_}} -> ok
+    after 1000 ->
+            error(timeout)
+    end,
+    ?assertMatch(1, gproc:get_value({rc,l,r1})).
+
+t_resource_count_on_zero_send() ->
+    Me = self(),
+    ?assertMatch(true, gproc:reg({p,l,myp})),
+    ?assertMatch(true, gproc:reg({r,l,r1})),
+    ?assertMatch(true, gproc:reg({rc,l,r1}, 1, [{on_zero,
+                                                 [{send, {p,l,myp}}]}])),
+    ?assertMatch(1, gproc:get_value({rc,l,r1})),
+    ?assertMatch(true, gproc:unreg({r,l,r1})),
+    ?assertMatch(0, gproc:get_value({rc,l,r1})),
+    receive
+        {gproc, resource_on_zero, l, r1, Me} ->
+            ok
+    after 1000 ->
+            error(timeout)
+    end.
 
 t_update_counters() ->
     ?assert(gproc:reg({c,l,c1}, 3) =:= true),
@@ -263,18 +417,21 @@ t_other_proc(F) ->
 
 t_await() ->
     Me = self(),
+    Name = {n,l,t_await},
     {_Pid,Ref} = spawn_monitor(
                    fun() ->
 			   exit(?assert(
-				   gproc:await({n,l,t_await}) =:= {Me,val}))
+				   gproc:await(Name) =:= {Me,val}))
 		   end),
-    ?assert(gproc:reg({n,l,t_await},val) =:= true),
+    ?assert(gproc:reg(Name, val) =:= true),
     receive
         {'DOWN', Ref, _, _, R} ->
             ?assertEqual(R, ok)
     after 10000 ->
             erlang:error(timeout)
-    end.
+    end,
+    ?assertMatch(Me, gproc:where(Name)),
+    ok.
 
 t_await_self() ->
     Me = self(),
@@ -311,8 +468,10 @@ t_is_clean() ->
     sys:get_status(gproc_monitor),
     T = ets:tab2list(gproc),
     Tm = ets:tab2list(gproc_monitor),
+    ?debugFmt("self() = ~p~n", [self()]),
     ?assertMatch([], Tm),
-    ?assertMatch([], T -- [{{whereis(gproc_monitor), l}}]).
+    ?assertMatch([], T -- [{{whereis(gproc_monitor), l}},
+                           {{self(), l}}]).
 
 t_simple_mreg() ->
     P = self(),
@@ -321,6 +480,15 @@ t_simple_mreg() ->
     ?assertEqual(P, gproc:where({n,l,foo})),
     ?assertEqual(P, gproc:where({n,l,bar})),
     ?assertEqual(true, gproc:munreg(n, l, [foo, bar])).
+
+t_mreg_props() ->
+    P = self(),
+    ?assertEqual(true, gproc:mreg(p, l, [{p, v}])),
+    ?assertEqual(v, gproc:get_value({p,l,p})),
+    %% Force a context switch, since gproc:monitor_me() is asynchronous
+    _ = sys:get_status(gproc),
+    {monitors, Mons} = process_info(whereis(gproc), monitors),
+    ?assertEqual(true, lists:keymember(P, 2, Mons)).
 
 
 t_gproc_crash() ->
@@ -369,7 +537,7 @@ t_give_away_to_pid() ->
     ?assertEqual(Me, gproc:where(From)),
     ?assertEqual(P, gproc:give_away(From, P)),
     ?assertEqual(P, gproc:where(From)),
-    ?assertEqual(ok, t_call(P, die)).
+    ?assertEqual(ok, t_lcall(P, die)).
 
 t_give_away_to_self() ->
     From = {n, l, foo},
@@ -404,9 +572,9 @@ t_give_away_and_back() ->
     ?assertEqual(Me, gproc:where(From)),
     ?assertEqual(P, gproc:give_away(From, P)),
     ?assertEqual(P, gproc:where(From)),
-    ?assertEqual(ok, t_call(P, {give_away, From})),
+    ?assertEqual(ok, t_lcall(P, {give_away, From})),
     ?assertEqual(Me, gproc:where(From)),
-    ?assertEqual(ok, t_call(P, die)).
+    ?assertEqual(ok, t_lcall(P, die)).
 
 t_select() ->
     ?assertEqual(true, gproc:reg({n, l, {n,1}}, x)),
@@ -518,7 +686,7 @@ t_qlc_dead() ->
 		       gproc:reg({p, l, {p,2}}, y),
 		       P0 ! {self(), ok},
 		       receive
-			   {P, goodbye} -> ok;
+			   {_P, goodbye} -> ok;
 			   {'DOWN', Ref, _, _, _} ->
 			       ok
 		       end
@@ -645,7 +813,7 @@ t_get_env_inherit() ->
     ?assertEqual(bar, gproc:get_env(l, gproc, foo, [{inherit, P}])),
     ?assertEqual(bar, gproc:get_env(l, gproc, foo,
 				    [{inherit, {n,l,get_env_p}}])),
-    ?assertEqual(ok, t_call(P, die)).
+    ?assertEqual(ok, t_lcall(P, die)).
 
 %% What we test here is that we return the same current_function as the
 %% process_info() BIF. As we parse the backtrace dump, we check with some
@@ -692,7 +860,7 @@ t_monitor() ->
 	    ok
     end,
     Ref = gproc:monitor({n,l,a}),
-    ?assertEqual(ok, t_call(P, die)),
+    ?assertEqual(ok, t_lcall(P, die)),
     receive
 	M ->
 	    ?assertEqual({gproc,unreg,Ref,{n,l,a}}, M)
@@ -709,12 +877,63 @@ t_monitor_give_away() ->
 	    ok
     end,
     Ref = gproc:monitor({n,l,a}),
-    ?assertEqual(ok, t_call(P, {give_away, {n,l,a}})),
+    ?assertEqual(ok, t_lcall(P, {give_away, {n,l,a}})),
     receive
 	M ->
 	    ?assertEqual({gproc,{migrated,Me},Ref,{n,l,a}}, M)
     end,
-    ?assertEqual(ok, t_call(P, die)).
+    ?assertEqual(ok, t_lcall(P, die)).
+
+t_monitor_standby() ->
+    Me = self(),
+    P = spawn(fun() ->
+                      gproc:reg({n,l,a}),
+                      Me ! continue,
+                      t_loop()
+              end),
+    receive continue ->
+	    ok
+    end,
+    Ref = gproc:monitor({n,l,a}, standby),
+    exit(P, kill),
+    receive
+	M ->
+	    ?assertEqual({gproc,{failover,Me},Ref,{n,l,a}}, M)
+    end,
+    gproc:unreg({n,l,a}),
+    ok.
+
+t_monitor_follow() ->
+    Name = ?T_NAME,
+    P1 = t_spawn(_Selective = true),
+    Ref = t_call(P1, {apply, gproc, monitor, [Name, follow]}),
+    {gproc,unreg,Ref,Name} = got_msg(P1),
+    %% gproc_lib:dbg([gproc,gproc_lib]),
+    P2 = t_spawn_reg(Name),
+    {gproc,registered,Ref,Name} = got_msg(P1),
+    exit(P2, kill),
+    {gproc,unreg,Ref,Name} = got_msg(P1),
+    P3 = t_spawn(true),
+    Ref3 = t_call(P3, {apply, gproc, monitor, [Name, standby]}),
+    {gproc,{failover,P3},Ref,Name} = got_msg(P1),
+    {gproc,{failover,P3},Ref3,Name} = got_msg(P3),
+    [exit(P,kill) || P <- [P1,P3]],
+    ok.
+
+t_monitor_demonitor() ->
+    Name = ?T_NAME,
+    P1 = t_spawn(Selective = true),
+    Ref = t_call(P1, {apply, gproc, monitor, [Name, follow]}),
+    {gproc, unreg, Ref, Name} = got_msg(P1),
+    ok = t_call(P1, {apply, gproc, demonitor, [Name, Ref]}),
+    P2 = t_spawn(Selective),
+    Ref2 = t_call(P2, {apply, gproc, monitor, [Name, follow]}),
+    {gproc, unreg, Ref2, Name} = got_msg(P2),
+    P3 = t_spawn_reg(Name),
+    {gproc, registered, Ref2, Name} = got_msg(P2),
+    ok = gproc_test_lib:no_msg(P1, 300),
+    [exit(P, kill) || P <- [P1, P2, P3]],
+    ok.
 
 t_subscribe() ->
     Key = {n,l,a},
@@ -725,13 +944,64 @@ t_subscribe() ->
 			   t_loop()
 		   end),
     ?assertEqual({gproc_monitor, Key, P}, get_msg()),
-    ?assertEqual(ok, t_call(P, {give_away, Key})),
+    ?assertEqual(ok, t_lcall(P, {give_away, Key})),
     ?assertEqual({gproc_monitor, Key, {migrated,self()}}, get_msg()),
     gproc:give_away(Key, P),
     ?assertEqual({gproc_monitor, Key, {migrated,P}}, get_msg()),
-    ?assertEqual(ok, t_call(P, die)),
+    ?assertEqual(ok, t_lcall(P, die)),
     ?assertEqual({gproc_monitor, Key, undefined}, get_msg()),
     ?assertEqual(ok, gproc_monitor:unsubscribe(Key)).
+
+t_simple_pool()->
+    Key = p1w1,
+    From = {n,l,Key},
+    _P = t_spawn_reg(From),
+    
+    %% create a new pool
+    ?assertEqual(gproc_pool:new(p1), ok),
+
+    %% add a worker to it
+    ?assertEqual(gproc_pool:add_worker(p1,Key) , 1 ),
+    ?assertEqual( length(gproc_pool:worker_pool(p1) ), 1),
+    %% but it should not be active as yet
+    ?assertEqual( length( gproc_pool:active_workers(p1)), 0),
+
+    ?assert( gproc_pool:pick(p1) =:= false ),
+
+    %% connect to make the worker active
+    ?assertEqual(gproc_pool:connect_worker(p1,Key) , true ),
+
+    %% it should be active now
+    ?assertEqual( length( gproc_pool:active_workers(p1)), 1),
+    ?assertEqual( gproc_pool:pick(p1) , {n,l,[gproc_pool,p1,1,Key]}),
+
+    Ref = erlang:make_ref(),
+    gproc:send(From, {self(), Ref, die}),
+    receive
+        {_, Ref, Returned} ->
+            ?assertEqual(Returned, ok)
+    after 1000 ->
+            %% the next 3 tests should fail if the worker is still alive
+            ok
+    end,
+
+    %% disconnect the worker from the pool.
+    ?assertEqual(gproc_pool:disconnect_worker(p1,Key), true),
+    %%  there should be no active workers now
+    ?assertEqual( length( gproc_pool:active_workers(p1)), 0),
+
+    %% remove the worker from the pool
+    ?assertEqual(gproc_pool:remove_worker(p1,Key), true),
+    %% there should be no workers now
+    %% NOTE: value of worker_pool seems to vary after removing workers
+    %%       sometimes [1,2] , sometimes [1], and then []
+    %%       so relying on defined_workers
+    ?assertEqual( length(gproc_pool:defined_workers(p1)), 0 ),
+    ?assertEqual( length(gproc_pool:worker_pool(p1)), 0 ),
+    ?assertEqual( false, gproc_test_lib:t_pool_contains_atleast(p1,1) ),
+
+    %% should be able to delete the pool now
+    ?assertEqual( gproc_pool:delete(p1), ok).
 
 get_msg() ->
     receive M ->
@@ -740,6 +1010,14 @@ get_msg() ->
 	    timeout
     end.
 
+%% t_spawn()      -> gproc_test_lib:t_spawn(node()).
+t_spawn(Sel)   -> gproc_test_lib:t_spawn(node(), Sel).
+t_spawn_reg(N) -> gproc_test_lib:t_spawn_reg(node(), N).
+t_call(P, Req) -> gproc_test_lib:t_call(P, Req).
+%% got_msg(P, M)  -> gproc_test_lib:got_msg(P, M).
+got_msg(P)     -> gproc_test_lib:got_msg(P).
+
+
 t_loop() ->
     receive
 	{From, {give_away, Key}} ->
@@ -747,10 +1025,16 @@ t_loop() ->
 	    From ! {self(), ok},
 	    t_loop();
 	{From, die} ->
-	    From ! {self(), ok}
+	    From ! {self(), ok};
+	{From, {reg, Name}} ->
+	    From ! {self(), gproc:reg(Name,undefined)},
+   	    t_loop();
+ 	{From, {unreg, Name}} ->
+   	    From ! {self(), gproc:unreg(Name)},
+   	    t_loop()
     end.
 
-t_call(P, Msg) ->
+t_lcall(P, Msg) ->
     P ! {self(), Msg},
     receive
 	{P, Reply} ->
